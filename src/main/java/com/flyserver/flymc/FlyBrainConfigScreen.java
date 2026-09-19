@@ -64,6 +64,14 @@ public class FlyBrainConfigScreen extends Screen {
         onClose();
     }
 
+    private static int parseInt(String s, int fallback) {
+        try { return Integer.parseInt(s); } catch (Exception e) { return fallback; }
+    }
+
+    private static double parseDouble(String s, double fallback) {
+        try { return Double.parseDouble(s); } catch (Exception e) { return fallback; }
+    }
+
     @Override
     public void onClose() {
         if (this.minecraft != null && parent != null) {
