@@ -29,7 +29,7 @@ public final class FlyBrainRegistry {
     public static final Item ANDROID_SPAWN_EGG = Registry.register(
             BuiltInRegistries.ITEM,
             Identifier.fromNamespaceAndPath("flybrain", "android_spawn_egg"),
-            new SpawnEggItem(ANDROID, new Item.Properties()));
+            new SpawnEggItem(new Item.Properties()));
 
     public static void init() {
         FabricDefaultAttributeRegistry.register(ANDROID, FlyBrainEntity.createLivingAttributes());
