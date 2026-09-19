@@ -4,10 +4,18 @@
   "version": "0.1.0",
   "name": "FlyBrain",
   "description": "Drives mobs with a real fruit-fly connectome via fly-server",
-  "entrypoints": { "main": ["com.flyserver.flymc.FlyBrainMod"] },
+  "entrypoints": {
+    "main": [
+      "com.flyserver.flymc.FlyBrainMod"
+    ],
+    "modmenu": [
+      "com.flyserver.flymc.FlyBrainModMenu"
+    ]
+  },
   "depends": {
     "fabricloader": ">=0.19.0",
     "fabric-api": "*",
-    "minecraft": "~26.1.2"
+    "minecraft": "~26.1.2",
+    "cloth-config": "*"
   }
 }

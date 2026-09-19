@@ -19,8 +19,8 @@ import java.util.List;
  * neuron_id (0 = forward, 1 = turn, 2 = jump/attack).
  */
 public class FlyBrainMod implements ModInitializer {
-    private BrainConfig config;
-    private BrainBridge bridge;
+    private static volatile BrainConfig config;
+    private static volatile BrainBridge bridge;
     private int tickCounter = 0;
 
     @Override
@@ -30,6 +30,14 @@ public class FlyBrainMod implements ModInitializer {
         ServerTickEvents.END_SERVER_TICK.register(this::onEndTick);
         System.out.println("[flybrain] initialized — server " + config.baseUrl
                 + ", target " + config.targetType + ", region " + config.stimRegion);
+    }
+
+    /** Called by the config screen: applies new settings live (no restart). */
+    public static void applyConfig(BrainConfig newCfg) {
+        config = newCfg;
+        bridge = new BrainBridge(newCfg);
+        System.out.println("[flybrain] config applied — server " + newCfg.baseUrl
+                + ", region " + newCfg.stimRegion);
     }
 
     private void onEndTick(MinecraftServer server) {

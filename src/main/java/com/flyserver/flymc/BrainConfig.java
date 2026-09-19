@@ -13,7 +13,7 @@ public class BrainConfig {
     public String username = "admin";
     public String password = "flyserver";
     /** Brain region stimulated each call (the "senses"). */
-    public String stimRegion = "visual";
+    public String stimRegion = "visual_projection";
     /** Brain ticks simulated per drive call. */
     public int brainSteps = 50;
     /** Game ticks between drive calls (20 = 1 second). */
@@ -27,19 +27,32 @@ public class BrainConfig {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
+    public static Path path() {
+        return FabricLoader.getInstance().getConfigDir().resolve("flybrain.json");
+    }
+
     public static BrainConfig load() {
-        Path p = FabricLoader.getInstance().getConfigDir().resolve("flybrain.json");
         try {
+            Path p = path();
             if (Files.exists(p)) {
                 return GSON.fromJson(Files.readString(p), BrainConfig.class);
             }
             BrainConfig def = new BrainConfig();
-            Files.createDirectories(p.getParent());
-            Files.writeString(p, GSON.toJson(def));
+            save(def);
             return def;
-        } catch (IOException e) {
+        } catch (Exception e) {
             System.err.println("[flybrain] config load failed, using defaults: " + e);
             return new BrainConfig();
+        }
+    }
+
+    public static void save(BrainConfig cfg) {
+        try {
+            Path p = path();
+            Files.createDirectories(p.getParent());
+            Files.writeString(p, GSON.toJson(cfg));
+        } catch (IOException e) {
+            System.err.println("[flybrain] config save failed: " + e);
         }
     }
 }
