@@ -35,7 +35,9 @@ public class FlyBrainMod implements ModInitializer {
     private void onEndTick(MinecraftServer server) {
         if (++tickCounter < config.intervalTicks) return;
         tickCounter = 0;
-        BlockPos origin = server.overworld().getSharedSpawnPos();
+        if (server.getPlayerList().getPlayers().isEmpty()) return;
+        BlockPos origin = BlockPos.containing(
+                server.getPlayerList().getPlayers().get(0).position());
         AABB area = new AABB(origin).inflate(config.driveRadius);
         int driven = 0;
         for (ServerLevel level : server.getAllLevels()) {
@@ -88,6 +90,5 @@ public class FlyBrainMod implements ModInitializer {
             v = new Vec3(v.x, 0.42, v.z);
         }
         mob.setDeltaMovement(v);
-        mob.hasImpulse = true;
     }
 }
