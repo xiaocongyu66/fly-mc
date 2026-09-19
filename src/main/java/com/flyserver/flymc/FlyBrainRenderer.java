@@ -11,8 +11,6 @@ public class FlyBrainRenderer extends HumanoidMobRenderer<FlyBrainEntity, Humano
     private static final Identifier TEXTURE = Identifier.fromNamespaceAndPath(
             "minecraft", "textures/entity/iron_golem/iron_golem.png");
 
-    public FlyBrainRenderer(org.lwjgl.system.NativeObject unused) { throw new IllegalStateException(); }
-
     public FlyBrainRenderer(net.minecraft.client.renderer.entity.EntityRendererProvider.Context ctx) {
         super(ctx, new HumanoidModel<>(ctx.bakeLayer(ModelLayers.ZOMBIE)), 0.5f);
     }

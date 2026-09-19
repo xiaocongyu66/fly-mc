@@ -50,7 +50,7 @@ public class FlyBrainMod implements ModInitializer {
         for (ServerLevel level : server.getAllLevels()) {
             if (driven >= config.maxEntities) return;
             List<FlyBrainEntity> androids = level.getEntitiesOfClass(FlyBrainEntity.class, area,
-                    Mob::isAlive);
+                    net.minecraft.world.entity.Entity::isAlive);
             for (FlyBrainEntity mob : androids) {
                 if (driven >= config.maxEntities) break;
                 driveEntity(mob);
