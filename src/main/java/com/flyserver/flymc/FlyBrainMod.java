@@ -6,8 +6,6 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.Mob;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
@@ -25,6 +23,7 @@ public class FlyBrainMod implements ModInitializer {
 
     @Override
     public void onInitialize() {
+        FlyBrainRegistry.init();
         config = BrainConfig.load();
         bridge = new BrainBridge(config);
         ServerTickEvents.END_SERVER_TICK.register(this::onEndTick);
@@ -50,11 +49,9 @@ public class FlyBrainMod implements ModInitializer {
         int driven = 0;
         for (ServerLevel level : server.getAllLevels()) {
             if (driven >= config.maxEntities) return;
-            EntityType<?> wanted = EntityType.byString(config.targetType).orElse(null);
-            if (wanted == null) return;
-            List<Mob> mobs = level.getEntitiesOfClass(Mob.class, area,
-                    m -> m.getType() == wanted && m.isAlive());
-            for (Mob mob : mobs) {
+            List<FlyBrainEntity> androids = level.getEntitiesOfClass(FlyBrainEntity.class, area,
+                    Mob::isAlive);
+            for (FlyBrainEntity mob : androids) {
                 if (driven >= config.maxEntities) break;
                 driveEntity(mob);
                 driven++;
@@ -62,7 +59,7 @@ public class FlyBrainMod implements ModInitializer {
         }
     }
 
-    private void driveEntity(Mob mob) {
+    private void driveEntity(FlyBrainEntity mob) {
         // stimulus strength: closer player → stronger drive (novelty/pressure)
         double nearest = 64.0;
         if (mob.level() != null && !mob.level().players().isEmpty()) {
