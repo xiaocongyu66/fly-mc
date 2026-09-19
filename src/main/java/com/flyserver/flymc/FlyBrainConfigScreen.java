@@ -1,64 +1,126 @@
 package com.flyserver.flymc;
 
-import me.shedaniel.clothconfig2.api.ConfigBuilder;
-import me.shedaniel.clothconfig2.api.ConfigCategory;
-import me.shedaniel.clothconfig2.api.ConfigEntryBuilder;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
-/** In-game settings (ModMenu → FlyBrain → config). Applies live. */
-public final class FlyBrainConfigScreen {
-    private FlyBrainConfigScreen() {}
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Consumer;
 
-    public static Screen build(Screen parent) {
-        BrainConfig cfg = BrainConfig.load();
-        ConfigBuilder builder = ConfigBuilder.create()
-                .setParentScreen(parent)
-                .setTitle(Component.translatable("title.flybrain.config"));
-        builder.setSavingRunnable(() -> {
-            BrainConfig.save(cfg);
-            FlyBrainMod.applyConfig(cfg);
+/**
+ * In-game settings (ModMenu → FlyBrain → config), zero external
+ * dependencies. Save writes config/flybrain.json and applies live.
+ */
+public class FlyBrainConfigScreen extends Screen {
+    private final BrainConfig cfg = BrainConfig.load();
+    private final Screen parent;
+    private final List<Row> rows = new ArrayList<>();
+
+    private record Row(String label, EditBox box, Consumer<String> setter) {
+        void apply() {
+            setter.accept(box.getValue().trim());
+        }
+    }
+
+    public FlyBrainConfigScreen(Screen parent) {
+        super(Component.literal("FlyBrain config"));
+        this.parent = parent;
+    }
+
+    @Override
+    protected void init() {
+        int colW = 190, labelH = 10, boxH = 18, gap = 4, rowH = labelH + boxH + gap;
+        int leftX = this.width / 2 - colW - 6;
+        int rightX = this.width / 2 + 6;
+        int top = 40;
+
+        rows.clear();
+        addRow("baseUrl", leftX, top, colW, v -> cfg.baseUrl = v);
+        addRow("brainSteps (1-5000)", rightX, top, colW, v -> cfg.brainSteps = parseInt(v, cfg.brainSteps));
+        addRow("username", leftX, top + rowH, colW, v -> cfg.username = v);
+        addRow("intervalTicks (1-200)", rightX, top + rowH, colW, v -> cfg.intervalTicks = parseInt(v, cfg.intervalTicks));
+        addRow("password", leftX, top + rowH * 2, colW, v -> cfg.password = v);
+        addRow("maxEntities (1-64)", rightX, top + rowH * 2, colW, v -> cfg.maxEntities = parseInt(v, cfg.maxEntities));
+        addRow("stimRegion", leftX, top + rowH * 3, colW, v -> cfg.stimRegion = v);
+        addRow("driveRadius (16-512)", rightX, top + rowH * 3, colW, v -> cfg.driveRadius = parseDouble(v, cfg.driveRadius));
+        addRow("targetType", leftX, top + rowH * 4, colW, v -> cfg.targetType = v);
+        addRow("turnRateThreshold (0-1)", rightX, top + rowH * 4, colW, v -> cfg.turnRateThreshold = parseDouble(v, cfg.turnRateThreshold));
+        addRow("attackRateThreshold (0-1)", leftX, top + rowH * 5, colW, v -> cfg.attackRateThreshold = parseDouble(v, cfg.attackRateThreshold));
+
+        int btnY = top + rowH * 5 + boxH + 8;
+        addRenderableWidget(Button.builder(Component.literal("Save & Apply"), b -> saveAndClose())
+                .bounds(this.width / 2 - 100, btnY, 200, 20).build());
+    }
+
+    private void addRow(String label, int x, int y, int w, Consumer<String> setter) {
+        var labelWidget = new EditBox(this.font, x, y + labelH, w, 18, Component.literal(label)) {
+            @Override
+            public void renderWidget(GuiGraphics g, int mouseX, int mouseY, float delta) {
+                super.renderWidget(g, mouseX, mouseY, delta);
+            }
+        };
+        // label above the box
+        addRenderableWidget(new AbstractWidget(x, y, w, 9, Component.literal(label)) {
+            @Override
+            protected void renderWidget(GuiGraphics g, int mouseX, int mouseY, float delta) {
+                g.drawString(FlyBrainConfigScreen.this.font, Component.literal(label), x, y, 0xA0A0A0);
+            }
+            @Override
+            public void onPress() {}
         });
-        ConfigEntryBuilder eb = builder.entryBuilder();
-        ConfigCategory cat = builder.getOrCreateCategory(Component.literal("fly-server"));
+        labelWidget.setMaxLength(256);
+        labelWidget.setValue(currentValue(label));
+        addRenderableWidget(labelWidget);
+        rows.add(new Row(label, labelWidget, setter));
+    }
 
-        cat.addEntry(eb.startStrField(Component.literal("baseUrl"), cfg.baseUrl)
-                .setTooltip(Component.literal("fly-server 地址，如 http://127.0.0.1:8321"))
-                .saveConsumer(v -> cfg.baseUrl = v)
-                .build());
-        cat.addEntry(eb.startStrField(Component.literal("username"), cfg.username)
-                .saveConsumer(v -> cfg.username = v)
-                .build());
-        cat.addEntry(eb.startStrField(Component.literal("password"), cfg.password)
-                .saveConsumer(v -> cfg.password = v)
-                .build());
-        cat.addEntry(eb.startStrField(Component.literal("stimRegion"), cfg.stimRegion)
-                .setTooltip(Component.literal("standard/full 底座的真实脑区名，如 visual_projection"))
-                .saveConsumer(v -> cfg.stimRegion = v)
-                .build());
-        cat.addEntry(eb.startIntField(Component.literal("brainSteps"), cfg.brainSteps)
-                .setMin(1).setMax(5000)
-                .setTooltip(Component.literal("每次驱动模拟的脑 tick 数"))
-                .saveConsumer(v -> cfg.brainSteps = v)
-                .build());
-        cat.addEntry(eb.startIntField(Component.literal("intervalTicks"), cfg.intervalTicks)
-                .setMin(1).setMax(200)
-                .setTooltip(Component.literal("游戏 tick 间隔（20 = 每秒驱动一次）"))
-                .saveConsumer(v -> cfg.intervalTicks = v)
-                .build());
-        cat.addEntry(eb.startStrField(Component.literal("targetType"), cfg.targetType)
-                .setTooltip(Component.literal("被果蝇脑驱动的生物，如 minecraft:zombie"))
-                .saveConsumer(v -> cfg.targetType = v)
-                .build());
-        cat.addEntry(eb.startIntField(Component.literal("maxEntities"), cfg.maxEntities)
-                .setMin(1).setMax(64)
-                .saveConsumer(v -> cfg.maxEntities = v)
-                .build());
-        cat.addEntry(eb.startDoubleField(Component.literal("driveRadius"), cfg.driveRadius)
-                .setMin(16.0).setMax(512.0)
-                .saveConsumer(v -> cfg.driveRadius = v)
-                .build());
+    private String currentValue(String label) {
+        return switch (label) {
+            case "baseUrl" -> cfg.baseUrl;
+            case "username" -> cfg.username;
+            case "password" -> cfg.password;
+            case "stimRegion" -> cfg.stimRegion;
+            case "targetType" -> cfg.targetType;
+            case "brainSteps (1-5000)" -> String.valueOf(cfg.brainSteps);
+            case "intervalTicks (1-200)" -> String.valueOf(cfg.intervalTicks);
+            case "maxEntities (1-64)" -> String.valueOf(cfg.maxEntities);
+            case "driveRadius (16-512)" -> String.valueOf(cfg.driveRadius);
+            case "turnRateThreshold (0-1)" -> String.valueOf(cfg.turnRateThreshold);
+            case "attackRateThreshold (0-1)" -> String.valueOf(cfg.attackRateThreshold);
+            default -> "";
+        };
+    }
 
-        return builder.build();
+    private void saveAndClose() {
+        for (Row r : rows) r.apply();
+        BrainConfig.save(cfg);
+        FlyBrainMod.applyConfig(cfg);
+        onClose();
+    }
+
+    private static int parseInt(String s, int fallback) {
+        try { return Integer.parseInt(s); } catch (Exception e) { return fallback; }
+    }
+
+    private static double parseDouble(String s, double fallback) {
+        try { return Double.parseDouble(s); } catch (Exception e) { return fallback; }
+    }
+
+    @Override
+    public void render(GuiGraphics g, int mouseX, int mouseY, float delta) {
+        super.render(g, mouseX, mouseY, delta);
+    }
+
+    @Override
+    public void onClose() {
+        if (this.minecraft != null && parent != null) {
+            this.minecraft.setScreen(parent);
+        } else {
+            super.onClose();
+        }
     }
 }
