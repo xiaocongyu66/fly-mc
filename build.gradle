@@ -16,8 +16,8 @@ dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     implementation "net.fabricmc:fabric-loader:${project.loader_version}"
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
-    modImplementation "dev.shedaniel.cloth:cloth-config-fabric:26.1.154+fabric"
-    modImplementation "com.terraformersmc:modmenu:18.0.1"
+    implementation "dev.shedaniel.cloth:cloth-config-fabric:26.1.154+fabric"
+    implementation "com.terraformersmc:modmenu:18.0.1"
 }
 
 java {
