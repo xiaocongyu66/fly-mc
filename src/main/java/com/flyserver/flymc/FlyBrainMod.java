@@ -1,0 +1,93 @@
+package com.flyserver.flymc;
+
+import com.google.gson.JsonElement;
+import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
+
+import java.util.List;
+
+/**
+ * Drives configured mobs with the fly brain: game state → stimulus,
+ * brain motor output (VNC actions) → movement channels bucketed by
+ * neuron_id (0 = forward, 1 = turn, 2 = jump/attack).
+ */
+public class FlyBrainMod implements ModInitializer {
+    private BrainConfig config;
+    private BrainBridge bridge;
+    private int tickCounter = 0;
+
+    @Override
+    public void onInitialize() {
+        config = BrainConfig.load();
+        bridge = new BrainBridge(config);
+        ServerTickEvents.END_SERVER_TICK.register(this::onEndTick);
+        System.out.println("[flybrain] initialized — server " + config.baseUrl
+                + ", target " + config.targetType + ", region " + config.stimRegion);
+    }
+
+    private void onEndTick(MinecraftServer server) {
+        if (++tickCounter < config.intervalTicks) return;
+        tickCounter = 0;
+        BlockPos origin = server.overworld().getSharedSpawnPos();
+        AABB area = new AABB(origin).inflate(config.driveRadius);
+        int driven = 0;
+        for (ServerLevel level : server.getAllLevels()) {
+            if (driven >= config.maxEntities) return;
+            EntityType<?> wanted = EntityType.byString(config.targetType).orElse(null);
+            if (wanted == null) return;
+            List<Mob> mobs = level.getEntitiesOfClass(Mob.class, area,
+                    m -> m.getType() == wanted && m.isAlive());
+            for (Mob mob : mobs) {
+                if (driven >= config.maxEntities) break;
+                driveEntity(mob);
+                driven++;
+            }
+        }
+    }
+
+    private void driveEntity(Mob mob) {
+        // stimulus strength: closer player → stronger drive (novelty/pressure)
+        double nearest = 64.0;
+        if (mob.level() != null && !mob.level().players().isEmpty()) {
+            for (var p : mob.level().players()) {
+                double d = p.distanceTo(mob);
+                if (d < nearest) nearest = d;
+            }
+        }
+        float current = (float) Math.max(5.0, 100.0 - nearest * 8.0);
+
+        List<BrainBridge.Action> actions = bridge.drive(
+                config.stimRegion, current, config.brainSteps);
+        if (actions.isEmpty()) return;
+
+        double forward = 0, turn = 0;
+        boolean jump = false;
+        for (BrainBridge.Action a : actions) {
+            int channel = (int) (a.neuronId() % 3);
+            switch (channel) {
+                case 0 -> forward += a.rate();
+                case 1 -> turn += a.rate();
+                case 2 -> { if (a.rate() > config.attackRateThreshold) jump = true; }
+            }
+        }
+
+        Vec3 look = mob.getLookAngle();
+        double speed = Math.min(0.3, forward * 0.05);
+        Vec3 v = new Vec3(look.x * speed, mob.getDeltaMovement().y, look.z * speed);
+        if (turn > config.turnRateThreshold) {
+            mob.setYRot(mob.getYRot() + 30f);
+        }
+        if (jump) {
+            v = new Vec3(v.x, 0.42, v.z);
+        }
+        mob.setDeltaMovement(v);
+        mob.hasImpulse = true;
+    }
+}
