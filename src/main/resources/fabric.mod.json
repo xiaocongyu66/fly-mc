@@ -10,6 +10,9 @@
     ],
     "modmenu": [
       "com.flyserver.flymc.FlyBrainModMenu"
+    ],
+    "client": [
+      "com.flyserver.flymc.FlyBrainClient"
     ]
   },
   "depends": {

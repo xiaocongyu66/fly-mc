@@ -1,7 +1,5 @@
 package com.flyserver.flymc;
 
-import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
@@ -12,19 +10,14 @@ import java.util.List;
 import java.util.function.Consumer;
 
 /**
- * In-game settings (ModMenu → FlyBrain → config), zero external
- * dependencies. Save writes config/flybrain.json and applies live.
+ * In-game settings (press F8 in-game), zero external dependencies.
+ * Save writes config/flybrain.json and applies live.
  */
 public class FlyBrainConfigScreen extends Screen {
+    private static final int COL_W = 190, BOX_H = 18, GAP = 4, ROW_H = 10 + BOX_H + GAP;
     private final BrainConfig cfg = BrainConfig.load();
     private final Screen parent;
-    private final List<Row> rows = new ArrayList<>();
-
-    private record Row(String label, EditBox box, Consumer<String> setter) {
-        void apply() {
-            setter.accept(box.getValue().trim());
-        }
-    }
+    private final List<Consumer<Void>> apply = new ArrayList<>();
 
     public FlyBrainConfigScreen(Screen parent) {
         super(Component.literal("FlyBrain config"));
@@ -33,86 +26,42 @@ public class FlyBrainConfigScreen extends Screen {
 
     @Override
     protected void init() {
-        int colW = 190, labelH = 10, boxH = 18, gap = 4, rowH = labelH + boxH + gap;
-        int leftX = this.width / 2 - colW - 6;
+        int leftX = this.width / 2 - COL_W - 6;
         int rightX = this.width / 2 + 6;
         int top = 40;
+        apply.clear();
 
-        rows.clear();
-        addRow("baseUrl", leftX, top, colW, v -> cfg.baseUrl = v);
-        addRow("brainSteps (1-5000)", rightX, top, colW, v -> cfg.brainSteps = parseInt(v, cfg.brainSteps));
-        addRow("username", leftX, top + rowH, colW, v -> cfg.username = v);
-        addRow("intervalTicks (1-200)", rightX, top + rowH, colW, v -> cfg.intervalTicks = parseInt(v, cfg.intervalTicks));
-        addRow("password", leftX, top + rowH * 2, colW, v -> cfg.password = v);
-        addRow("maxEntities (1-64)", rightX, top + rowH * 2, colW, v -> cfg.maxEntities = parseInt(v, cfg.maxEntities));
-        addRow("stimRegion", leftX, top + rowH * 3, colW, v -> cfg.stimRegion = v);
-        addRow("driveRadius (16-512)", rightX, top + rowH * 3, colW, v -> cfg.driveRadius = parseDouble(v, cfg.driveRadius));
-        addRow("targetType", leftX, top + rowH * 4, colW, v -> cfg.targetType = v);
-        addRow("turnRateThreshold (0-1)", rightX, top + rowH * 4, colW, v -> cfg.turnRateThreshold = parseDouble(v, cfg.turnRateThreshold));
-        addRow("attackRateThreshold (0-1)", leftX, top + rowH * 5, colW, v -> cfg.attackRateThreshold = parseDouble(v, cfg.attackRateThreshold));
+        addBox(leftX, top, cfg.baseUrl, "http://127.0.0.1:8321", v -> cfg.baseUrl = v);
+        addBox(rightX, top, String.valueOf(cfg.brainSteps), "brainSteps", v -> cfg.brainSteps = parseInt(v, cfg.brainSteps));
+        addBox(leftX, top + ROW_H, cfg.username, "username", v -> cfg.username = v);
+        addBox(rightX, top + ROW_H, String.valueOf(cfg.intervalTicks), "intervalTicks", v -> cfg.intervalTicks = parseInt(v, cfg.intervalTicks));
+        addBox(leftX, top + ROW_H * 2, cfg.password, "password", v -> cfg.password = v);
+        addBox(rightX, top + ROW_H * 2, String.valueOf(cfg.maxEntities), "maxEntities", v -> cfg.maxEntities = parseInt(v, cfg.maxEntities));
+        addBox(leftX, top + ROW_H * 3, cfg.stimRegion, "stimRegion", v -> cfg.stimRegion = v);
+        addBox(rightX, top + ROW_H * 3, String.valueOf(cfg.driveRadius), "driveRadius", v -> cfg.driveRadius = parseDouble(v, cfg.driveRadius));
+        addBox(leftX, top + ROW_H * 4, cfg.targetType, "targetType", v -> cfg.targetType = v);
+        addBox(rightX, top + ROW_H * 4, String.valueOf(cfg.turnRateThreshold), "turnRateThr", v -> cfg.turnRateThreshold = parseDouble(v, cfg.turnRateThreshold));
+        addBox(leftX, top + ROW_H * 5, String.valueOf(cfg.attackRateThreshold), "attackRateThr", v -> cfg.attackRateThreshold = parseDouble(v, cfg.attackRateThreshold));
 
-        int btnY = top + rowH * 5 + boxH + 8;
+        int btnY = top + ROW_H * 5 + BOX_H + 8;
         addRenderableWidget(Button.builder(Component.literal("Save & Apply"), b -> saveAndClose())
                 .bounds(this.width / 2 - 100, btnY, 200, 20).build());
     }
 
-    private void addRow(String label, int x, int y, int w, Consumer<String> setter) {
-        var labelWidget = new EditBox(this.font, x, y + labelH, w, 18, Component.literal(label)) {
-            @Override
-            public void renderWidget(GuiGraphics g, int mouseX, int mouseY, float delta) {
-                super.renderWidget(g, mouseX, mouseY, delta);
-            }
-        };
-        // label above the box
-        addRenderableWidget(new AbstractWidget(x, y, w, 9, Component.literal(label)) {
-            @Override
-            protected void renderWidget(GuiGraphics g, int mouseX, int mouseY, float delta) {
-                g.drawString(FlyBrainConfigScreen.this.font, Component.literal(label), x, y, 0xA0A0A0);
-            }
-            @Override
-            public void onPress() {}
-        });
-        labelWidget.setMaxLength(256);
-        labelWidget.setValue(currentValue(label));
-        addRenderableWidget(labelWidget);
-        rows.add(new Row(label, labelWidget, setter));
-    }
-
-    private String currentValue(String label) {
-        return switch (label) {
-            case "baseUrl" -> cfg.baseUrl;
-            case "username" -> cfg.username;
-            case "password" -> cfg.password;
-            case "stimRegion" -> cfg.stimRegion;
-            case "targetType" -> cfg.targetType;
-            case "brainSteps (1-5000)" -> String.valueOf(cfg.brainSteps);
-            case "intervalTicks (1-200)" -> String.valueOf(cfg.intervalTicks);
-            case "maxEntities (1-64)" -> String.valueOf(cfg.maxEntities);
-            case "driveRadius (16-512)" -> String.valueOf(cfg.driveRadius);
-            case "turnRateThreshold (0-1)" -> String.valueOf(cfg.turnRateThreshold);
-            case "attackRateThreshold (0-1)" -> String.valueOf(cfg.attackRateThreshold);
-            default -> "";
-        };
+    private void addBox(int x, int y, String value, String hint, Consumer<String> setter) {
+        EditBox box = new EditBox(this.font, x, y, COL_W, BOX_H, Component.literal(hint));
+        box.setMaxLength(256);
+        box.setHint(Component.literal(hint));
+        box.setValue(value);
+        addRenderableWidget(box);
+        apply.add(v -> setter.accept(box.getValue().trim()));
     }
 
     private void saveAndClose() {
-        for (Row r : rows) r.apply();
+        for (Consumer<Void> a : apply) a.accept(null);
         BrainConfig.save(cfg);
         FlyBrainMod.applyConfig(cfg);
         onClose();
-    }
-
-    private static int parseInt(String s, int fallback) {
-        try { return Integer.parseInt(s); } catch (Exception e) { return fallback; }
-    }
-
-    private static double parseDouble(String s, double fallback) {
-        try { return Double.parseDouble(s); } catch (Exception e) { return fallback; }
-    }
-
-    @Override
-    public void render(GuiGraphics g, int mouseX, int mouseY, float delta) {
-        super.render(g, mouseX, mouseY, delta);
     }
 
     @Override
