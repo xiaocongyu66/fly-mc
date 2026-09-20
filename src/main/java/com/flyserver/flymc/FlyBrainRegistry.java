@@ -37,6 +37,6 @@ public final class FlyBrainRegistry {
             new SpawnEggItem(new Item.Properties().setId(EGG_KEY)));
 
     public static void init() {
-        FabricDefaultAttributeRegistry.register(ANDROID, FlyBrainEntity.createLivingAttributes());
+        FabricDefaultAttributeRegistry.register(ANDROID, net.minecraft.world.entity.Mob.createMobAttributes());
     }
 }
