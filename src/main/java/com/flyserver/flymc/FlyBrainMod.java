@@ -22,6 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * neuron_id (0 = forward, 1 = turn, 2 = jump/attack).
  */
 public class FlyBrainMod implements ModInitializer {
+    private static volatile FlyBrainMod instance;
     private static volatile BrainConfig config;
     private static volatile BrainBridge bridge;
     private int tickCounter = 0;
@@ -33,6 +34,21 @@ public class FlyBrainMod implements ModInitializer {
     private final Map<UUID, String> sessions = new ConcurrentHashMap<>();
     /** Entities with a live SSE motor stream. */
     private final Set<UUID> streaming = ConcurrentHashMap.newKeySet();
+    /** Pain window per entity: strong stimulus + reflex until this wall time. */
+    private final Map<UUID, Long> painUntil = new ConcurrentHashMap<>();
+    /** Entities whose session already got its individuality signature. */
+    private final Set<UUID> seeded = ConcurrentHashMap.newKeySet();
+
+    /** Called from FlyBrainEntity.hurt on the server thread: reflex + pain. */
+    public static void onPain(FlyBrainEntity mob, float amount) {
+        FlyBrainMod self = instance;
+        if (self == null) return;
+        long now = System.currentTimeMillis();
+        self.painUntil.put(mob.getUUID(), now + 1500);
+        // immediate reflex: jolt + random turn + hop (spinal, no brain)
+        double turn = java.util.concurrent.ThreadLocalRandom.current().nextBoolean() ? 1.0 : -1.0;
+        self.gaits.put(mob.getUUID(), new Gait(0.6, turn, true));
+    }
 
     /** Held motor command between brain updates: think slow, act fast. */
     private record Gait(double forward, double turn, boolean jump) {}
@@ -41,6 +57,7 @@ public class FlyBrainMod implements ModInitializer {
 
     @Override
     public void onInitialize() {
+        instance = this;
         FlyBrainRegistry.init();
         config = BrainConfig.load();
         bridge = new BrainBridge(config);
@@ -150,6 +167,12 @@ public class FlyBrainMod implements ModInitializer {
         }
         float current = (float) Math.max(5.0, 100.0 - nearest * 8.0);
         float offset = (float) (((bearing + 180.0) / 360.0 + 1.0) % 1.0);
+        boolean inPain = painUntil.getOrDefault(mob.getUUID(), 0L) > System.currentTimeMillis();
+        if (inPain) {
+            // nociception: strong, non-directional (pain is a body signal)
+            current = 150f;
+            offset = java.util.concurrent.ThreadLocalRandom.current().nextFloat();
+        }
         BrainBridge bridgeRef = bridge;
         BrainConfig cfg = config;
         if (!inFlight.add(mob.getUUID())) return;  // previous drive still running
@@ -158,6 +181,12 @@ public class FlyBrainMod implements ModInitializer {
                             u -> bridgeRef.createSession());
                     if (sid == null) return List.<BrainBridge.Action>of();
                     startStream(mob.getUUID(), sid, bridgeRef);
+                    if (seeded.add(mob.getUUID())) {
+                        // individuality: a one-time random signature stimulus
+                        // decorrelates otherwise-identical trajectories
+                        float sig = java.util.concurrent.ThreadLocalRandom.current().nextFloat();
+                        bridgeRef.drive(sid, cfg.stimRegion, sig, 60f, 20);
+                    }
                     List<BrainBridge.Action> a =
                             bridgeRef.drive(sid, cfg.stimRegion, offset, current, cfg.brainSteps);
                     if (a.isEmpty()) sessions.remove(mob.getUUID());  // stale session

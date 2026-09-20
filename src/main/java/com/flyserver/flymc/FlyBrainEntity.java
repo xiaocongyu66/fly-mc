@@ -1,5 +1,7 @@
 package com.flyserver.flymc;
 
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.level.Level;
@@ -11,5 +13,14 @@ import net.minecraft.world.level.Level;
 public class FlyBrainEntity extends PathfinderMob {
     public FlyBrainEntity(EntityType<? extends FlyBrainEntity> type, Level level) {
         super(type, level);
+    }
+
+    @Override
+    public boolean hurt(DamageSource source, float amount) {
+        boolean hurt = super.hurt(source, amount);
+        if (hurt && !level().isClientSide && level() instanceof ServerLevel) {
+            FlyBrainMod.onPain(this, amount);
+        }
+        return hurt;
     }
 }
