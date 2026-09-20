@@ -188,6 +188,8 @@ public class BrainBridge {
             JsonObject target = new JsonObject();
             target.addProperty("region", region);
             target.addProperty("offset", offset);
+            // true retinotopy: server picks neurons by soma position (v3)
+            target.addProperty("retina", offset);
             JsonObject ob = new JsonObject();
             ob.addProperty("modality", "current");
             ob.add("target", target);
