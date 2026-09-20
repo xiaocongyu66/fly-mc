@@ -18,7 +18,6 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -67,11 +66,22 @@ public class BrainBridge {
                         + "Authorization: Bearer " + token + "\r\n\r\n";
                 out.write(handshake.getBytes(StandardCharsets.UTF_8));
                 out.flush();
-                BufferedReader hr = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
-                String status = hr.readLine();
-                if (status == null || !status.contains("101")) return;  // no upgrade
-                String line;
-                while ((line = hr.readLine()) != null && !line.isEmpty()) { /* headers */ }
+                // parse the 101 response byte-wise: a BufferedReader could
+                // swallow frame bytes arriving in the same TCP segment
+                ByteArrayOutputStream head = new ByteArrayOutputStream();
+                int run = 0;
+                while (run < 4) {
+                    int c = in.read();
+                    if (c < 0) return;
+                    head.write(c);
+                    run = (c == "\r".charAt(0) && run == 0) ? 1
+                            : (c == "\n".charAt(0) && run == 1) ? 2
+                            : (c == "\r".charAt(0) && run == 2) ? 3
+                            : (c == "\n".charAt(0) && run == 3) ? 4
+                            : 0;
+                }
+                String resp = head.toString(StandardCharsets.UTF_8);
+                if (!resp.startsWith("HTTP/1.1 101")) return;  // no upgrade
 
                 // frame loop (server frames are unmasked)
                 ByteArrayOutputStream payload = new ByteArrayOutputStream();
