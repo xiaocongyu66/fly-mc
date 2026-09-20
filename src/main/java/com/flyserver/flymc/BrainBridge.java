@@ -10,8 +10,15 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.io.ByteArrayOutputStream;
 import java.io.BufferedReader;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.net.Socket;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -32,6 +39,88 @@ public class BrainBridge {
 
     public BrainBridge(BrainConfig config) {
         this.config = config;
+    }
+
+    /** WebSocket live activity stream: one HTTP handshake, then persistent
+     *  frames at simulation speed. Each frame = one ActivityEvent JSON
+     *  (spike_sample = VNC neurons that fired this brain tick). Blocks;
+     *  run on a worker thread. Reconnects by returning on any failure. */
+    public void wsActivityStream(String sessionId, java.util.function.Consumer<List<Long>> onTick) {
+        try {
+            ensureToken();
+            URI u = URI.create(config.baseUrl);
+            String host = u.getHost() == null ? "127.0.0.1" : u.getHost();
+            int port = u.getPort() > 0 ? u.getPort() : 80;
+            try (Socket sock = new Socket()) {
+                sock.connect(new InetSocketAddress(host, port), 3000);
+                sock.setSoTimeout(60_000);
+                OutputStream out = sock.getOutputStream();
+                InputStream in = sock.getInputStream();
+                String key = java.util.Base64.getEncoder().encodeToString(
+                        ("flybrain" + System.nanoTime()).getBytes(StandardCharsets.UTF_8));
+                String handshake = "GET /v1/sessions/" + sessionId + "/ws HTTP/1.1\r\n"
+                        + "Host: " + host + ":" + port + "\r\n"
+                        + "Upgrade: websocket\r\n"
+                        + "Connection: Upgrade\r\n"
+                        + "Sec-WebSocket-Key: " + key + "\r\n"
+                        + "Sec-WebSocket-Version: 13\r\n"
+                        + "Authorization: Bearer " + token + "\r\n\r\n";
+                out.write(handshake.getBytes(StandardCharsets.UTF_8));
+                out.flush();
+                BufferedReader hr = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
+                String status = hr.readLine();
+                if (status == null || !status.contains("101")) return;  // no upgrade
+                String line;
+                while ((line = hr.readLine()) != null && !line.isEmpty()) { /* headers */ }
+
+                // frame loop (server frames are unmasked)
+                ByteArrayOutputStream payload = new ByteArrayOutputStream();
+                while (true) {
+                    int b1 = in.read(), b2 = in.read();
+                    if (b1 < 0 || b2 < 0) return;
+                    boolean masked = (b2 & 0x80) != 0;
+                    long len = b2 & 0x7F;
+                    if (len == 126) {
+                        len = ((in.read() & 0xFFL) << 8) | (in.read() & 0xFFL);
+                    } else if (len == 127) {
+                        len = 0;
+                        for (int i = 0; i < 8; i++) len = (len << 8) | (in.read() & 0xFFL);
+                    }
+                    byte[] mask = new byte[4];
+                    if (masked && in.readNBytes(mask, 0, 4) != 4) return;
+                    payload.reset();
+                    byte[] buf = new byte[(int) len];
+                    if (len > 0 && in.readNBytes(buf, 0, (int) len) != len) return;
+                    if (masked) for (int i = 0; i < buf.length; i++) buf[i] ^= mask[i % 4];
+                    int opcode = b1 & 0x0F;
+                    if (opcode == 0x9) { // ping -> pong (masked, client frame)
+                        byte[] pong = new byte[buf.length];
+                        System.arraycopy(buf, 0, pong, 0, buf.length);
+                        out.write(new byte[]{(byte) 0x8A, (byte) (0x80 | Math.min(125, pong.length))});
+                        byte[] m = {(byte) 0x12, (byte) 0x34, (byte) 0x56, (byte) 0x78};
+                        out.write(m);
+                        byte[] maskedPong = new byte[pong.length];
+                        for (int i = 0; i < pong.length; i++) maskedPong[i] = (byte) (pong[i] ^ m[i % 4]);
+                        out.write(maskedPong);
+                        out.flush();
+                        continue;
+                    }
+                    if (opcode == 0x8) return;  // close
+                    if (opcode == 0x1) {  // text
+                        payload.write(buf);
+                        JsonObject ev = JsonParser.parseString(
+                                payload.toString(StandardCharsets.UTF_8)).getAsJsonObject();
+                        JsonArray sp = ev.getAsJsonArray("spike_sample");
+                        if (sp == null) continue;
+                        List<Long> ids = new ArrayList<>();
+                        for (JsonElement e : sp) ids.add(e.getAsLong());
+                        onTick.accept(ids);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // stream ended — caller may reconnect
+        }
     }
 
     /** Subscribes to the session's live activity stream (SSE). Each event

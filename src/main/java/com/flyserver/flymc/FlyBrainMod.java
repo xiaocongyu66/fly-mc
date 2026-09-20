@@ -98,7 +98,7 @@ public class FlyBrainMod implements ModInitializer {
             int n = 0;
             final double[][] acc = {buckets};
             final int[] cnt = {n};
-            bridgeRef.activityStream(sid, tickIds -> {
+            bridgeRef.wsActivityStream(sid, tickIds -> {
                 for (long nid : tickIds) acc[0][(int) (nid % 3)] += 1.0;
                 cnt[0]++;
                 if (cnt[0] >= 8) {  // ~1s of brain time: refresh the gait
