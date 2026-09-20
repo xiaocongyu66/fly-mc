@@ -16,11 +16,12 @@ public class FlyBrainEntity extends PathfinderMob {
     }
 
     @Override
-    public void hurt(DamageSource source, float amount) {
+    public boolean hurtServer(ServerLevel level, DamageSource source, float amount) {
         float before = getHealth();
-        super.hurt(source, amount);
-        if (getHealth() < before && !level().isClientSide() && level() instanceof ServerLevel) {
+        boolean hurt = super.hurtServer(level, source, amount);
+        if (hurt && getHealth() < before) {
             FlyBrainMod.onPain(this, amount);
         }
+        return hurt;
     }
 }
