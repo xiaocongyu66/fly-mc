@@ -10,12 +10,14 @@ import java.nio.file.Path;
 
 public class BrainConfig {
     public String baseUrl = "http://127.0.0.1:8321";
+    /** Substrate to simulate (must be activated on the server). */
+    public String substrate = "full";
     public String username = "admin";
     public String password = "flyserver";
     /** Brain region stimulated each call (the "senses"). */
     public String stimRegion = "visual_projection";
     /** Brain ticks simulated per drive call. */
-    public int brainSteps = 50;
+    public int brainSteps = 25;
     /** Game ticks between drive calls (20 = 1 second). */
     public int intervalTicks = 20;
     /** Entity type driven by the brain (mojmap id). */

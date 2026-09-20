@@ -32,19 +32,38 @@ public class BrainBridge {
         this.config = config;
     }
 
-    /** Runs one brain drive; returns the motor actions (empty on any failure).
-     *  offset (0-1) = where in the visual field the stimulus lands (retinotopy). */
-    public List<Action> drive(String region, float offset, float current, int steps) {
+    /** Creates a persistent brain session (membrane state lives across drives). */
+    public String createSession() {
         try {
             ensureToken();
             JsonObject body = new JsonObject();
+            body.addProperty("substrate", config.substrate);
+            JsonObject resp = post("/v1/sessions", body.toString(), true);
+            return resp.get("id").getAsString();
+        } catch (Exception e) {
+            System.err.println("[flybrain] session create failed: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /** Runs one drive on a persistent session: stimulate, think, read motors.
+     *  offset (0-1) = where in the visual field the stimulus lands (retinotopy). */
+    public List<Action> drive(String sessionId, String region, float offset, float current, int steps) {
+        try {
+            ensureToken();
             JsonObject target = new JsonObject();
             target.addProperty("region", region);
             target.addProperty("offset", offset);
-            body.add("target", target);
-            body.addProperty("current", current);
-            body.addProperty("steps", steps);
-            JsonObject resp = post("/v1/chat/simulate", body.toString(), true);
+            JsonObject ob = new JsonObject();
+            ob.addProperty("modality", "current");
+            ob.add("target", target);
+            ob.addProperty("current", current);
+            ob.addProperty("duration_ticks", 1);
+            post("/v1/sessions/" + sessionId + "/observe", ob.toString(), true);
+
+            JsonObject sb = new JsonObject();
+            sb.addProperty("steps", steps);
+            JsonObject resp = post("/v1/sessions/" + sessionId + "/step", sb.toString(), true);
             List<Action> out = new ArrayList<>();
             JsonArray actions = resp.getAsJsonArray("actions");
             if (actions != null) {

@@ -10,6 +10,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -26,6 +27,13 @@ public class FlyBrainMod implements ModInitializer {
     private int tickCounter = 0;
     /** One outstanding drive per entity — results apply when ready. */
     private final Set<UUID> inFlight = ConcurrentHashMap.newKeySet();
+    /** Last brain decision per entity, applied every tick (gait). */
+    private final Map<UUID, Gait> gaits = new ConcurrentHashMap<>();
+    /** Persistent brain session per entity (membrane state persists). */
+    private final Map<UUID, String> sessions = new ConcurrentHashMap<>();
+
+    /** Held motor command between brain updates: think slow, act fast. */
+    private record Gait(double forward, double turn, boolean jump) {}
 
     @Override
     public void onInitialize() {
@@ -46,23 +54,47 @@ public class FlyBrainMod implements ModInitializer {
     }
 
     private void onEndTick(MinecraftServer server) {
-        if (++tickCounter < config.intervalTicks) return;
-        tickCounter = 0;
         if (server.getPlayerList().getPlayers().isEmpty()) return;
         BlockPos origin = BlockPos.containing(
                 server.getPlayerList().getPlayers().get(0).position());
         AABB area = new AABB(origin).inflate(config.driveRadius);
-        int driven = 0;
+
+        // collect androids once per tick
+        List<FlyBrainEntity> androids = new java.util.ArrayList<>();
         for (ServerLevel level : server.getAllLevels()) {
-            if (driven >= config.maxEntities) return;
-            List<FlyBrainEntity> androids = level.getEntitiesOfClass(FlyBrainEntity.class, area,
-                    net.minecraft.world.entity.Entity::isAlive);
-            for (FlyBrainEntity mob : androids) {
-                if (driven >= config.maxEntities) break;
-                driveEntity(mob);
-                driven++;
-            }
+            androids.addAll(level.getEntitiesOfClass(FlyBrainEntity.class, area,
+                    net.minecraft.world.entity.Entity::isAlive));
+            if (androids.size() >= config.maxEntities) break;
         }
+
+        // act: apply the held gait every tick (continuous locomotion)
+        for (FlyBrainEntity mob : androids) {
+            Gait g = gaits.get(mob.getUUID());
+            if (g != null) applyGait(mob, g);
+        }
+
+        // think: schedule a brain update per entity on the interval
+        if (++tickCounter < config.intervalTicks) return;
+        tickCounter = 0;
+        int driven = 0;
+        for (FlyBrainEntity mob : androids) {
+            if (driven >= config.maxEntities) break;
+            driveEntity(mob);
+            driven++;
+        }
+    }
+
+    private void applyGait(FlyBrainEntity mob, Gait g) {
+        Vec3 look = mob.getLookAngle();
+        double speed = Math.max(0.0, Math.min(0.25, g.forward() * 0.06));
+        Vec3 v = new Vec3(look.x * speed, mob.getDeltaMovement().y, look.z * speed);
+        if (g.turn() > 0.15) {
+            mob.setYRot(mob.getYRot() + (float) Math.min(3.0, g.turn() * 3.0));
+        }
+        if (g.jump() && mob.onGround()) {
+            v = new Vec3(v.x, 0.42, v.z);
+        }
+        mob.setDeltaMovement(v);
     }
 
     private void driveEntity(FlyBrainEntity mob) {
@@ -88,8 +120,15 @@ public class FlyBrainMod implements ModInitializer {
         BrainBridge bridgeRef = bridge;
         BrainConfig cfg = config;
         if (!inFlight.add(mob.getUUID())) return;  // previous drive still running
-        CompletableFuture.supplyAsync(
-                () -> bridgeRef.drive(cfg.stimRegion, offset, current, cfg.brainSteps))
+        CompletableFuture.supplyAsync(() -> {
+                    String sid = sessions.computeIfAbsent(mob.getUUID(),
+                            u -> bridgeRef.createSession());
+                    if (sid == null) return List.<BrainBridge.Action>of();
+                    List<BrainBridge.Action> a =
+                            bridgeRef.drive(sid, cfg.stimRegion, offset, current, cfg.brainSteps);
+                    if (a.isEmpty()) sessions.remove(mob.getUUID());  // stale session
+                    return a;
+                })
             .thenAccept(actions -> {
                 inFlight.remove(mob.getUUID());
                 if (actions.isEmpty() || !mob.isAlive()) return;
@@ -106,7 +145,8 @@ public class FlyBrainMod implements ModInitializer {
             });
     }
 
-    /** Runs on the server thread: channel-bucket VNC rates into motion. */
+    /** Runs on the server thread: channel-bucket VNC rates into a gait
+     *  command that persists (applied every tick) until the next decision. */
     private void applyActions(FlyBrainEntity mob, List<BrainBridge.Action> actions) {
         if (!mob.isAlive()) return;
         double forward = 0, turn = 0;
@@ -119,16 +159,6 @@ public class FlyBrainMod implements ModInitializer {
                 case 2 -> { if (a.rate() > config.attackRateThreshold) jump = true; }
             }
         }
-
-        Vec3 look = mob.getLookAngle();
-        double speed = Math.min(0.3, forward * 0.05);
-        Vec3 v = new Vec3(look.x * speed, mob.getDeltaMovement().y, look.z * speed);
-        if (turn > config.turnRateThreshold) {
-            mob.setYRot(mob.getYRot() + 30f);
-        }
-        if (jump) {
-            v = new Vec3(v.x, 0.42, v.z);
-        }
-        mob.setDeltaMovement(v);
+        gaits.put(mob.getUUID(), new Gait(forward, turn, jump));
     }
 }
