@@ -14,7 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Minimal fly-server client: login → /v1/chat_simulate (stateless
+ * Minimal fly-server client: login → /v1/chat/simulate (stateless
  * create→observe→step→read actions→delete inside the server).
  */
 public class BrainBridge {
@@ -42,7 +42,7 @@ public class BrainBridge {
             body.add("target", target);
             body.addProperty("current", current);
             body.addProperty("steps", steps);
-            JsonObject resp = post("/v1/chat_simulate", body.toString(), true);
+            JsonObject resp = post("/v1/chat/simulate", body.toString(), true);
             List<Action> out = new ArrayList<>();
             JsonArray actions = resp.getAsJsonArray("actions");
             if (actions != null) {
