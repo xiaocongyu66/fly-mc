@@ -11,6 +11,8 @@ import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.SpawnEggItem;
 
+import static net.minecraft.core.registries.Registries.ITEM;
+
 /** Registry: the fly-brain android entity + its spawn egg. */
 public final class FlyBrainRegistry {
     private FlyBrainRegistry() {}
@@ -26,10 +28,13 @@ public final class FlyBrainRegistry {
                     .clientTrackingRange(10)
                     .build(ANDROID_KEY));
 
+    private static final ResourceKey<Item> EGG_KEY = ResourceKey.create(
+            ITEM, Identifier.fromNamespaceAndPath("flybrain", "android_spawn_egg"));
+
     public static final Item ANDROID_SPAWN_EGG = Registry.register(
             BuiltInRegistries.ITEM,
-            Identifier.fromNamespaceAndPath("flybrain", "android_spawn_egg"),
-            new SpawnEggItem(new Item.Properties()));
+            EGG_KEY,
+            new SpawnEggItem(new Item.Properties().setId(EGG_KEY)));
 
     public static void init() {
         FabricDefaultAttributeRegistry.register(ANDROID, FlyBrainEntity.createLivingAttributes());
