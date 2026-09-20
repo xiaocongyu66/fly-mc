@@ -31,9 +31,13 @@ public class FlyBrainMod implements ModInitializer {
     private final Map<UUID, Gait> gaits = new ConcurrentHashMap<>();
     /** Persistent brain session per entity (membrane state persists). */
     private final Map<UUID, String> sessions = new ConcurrentHashMap<>();
+    /** Entities with a live SSE motor stream. */
+    private final Set<UUID> streaming = ConcurrentHashMap.newKeySet();
 
     /** Held motor command between brain updates: think slow, act fast. */
     private record Gait(double forward, double turn, boolean jump) {}
+    /** Rolling spike-bucket window per entity, fed by the live SSE stream. */
+    private record StreamAcc(double[] buckets, int n) {}
 
     @Override
     public void onInitialize() {
@@ -84,6 +88,35 @@ public class FlyBrainMod implements ModInitializer {
         }
     }
 
+    /** Live motor updates at simulation speed (~130ms/tick) from the SSE
+     *  activity stream — gait refreshes continuously while the brain runs. */
+    private void startStream(UUID id, String sid, BrainBridge bridgeRef) {
+        if (streaming.contains(id)) return;
+        streaming.add(id);
+        Thread t = new Thread(() -> {
+            double[] buckets = new double[3];
+            int n = 0;
+            final double[][] acc = {buckets};
+            final int[] cnt = {n};
+            bridgeRef.activityStream(sid, tickIds -> {
+                for (long nid : tickIds) acc[0][(int) (nid % 3)] += 1.0;
+                cnt[0]++;
+                if (cnt[0] >= 8) {  // ~1s of brain time: refresh the gait
+                    double f = acc[0][0] / cnt[0], tn = acc[0][1] / cnt[0];
+                    boolean j = acc[0][2] / cnt[0] > config.attackRateThreshold;
+                    Gait g = new Gait(f, tn, j);
+                    var server = java.util.concurrent.CompletableFuture.completedFuture(g);
+                    gaits.put(id, g);
+                    acc[0] = new double[3];
+                    cnt[0] = 0;
+                }
+            });
+            streaming.remove(id);
+        }, "flybrain-stream-" + id.toString().substring(0, 8));
+        t.setDaemon(true);
+        t.start();
+    }
+
     private void applyGait(FlyBrainEntity mob, Gait g) {
         Vec3 look = mob.getLookAngle();
         double speed = Math.max(0.0, Math.min(0.25, g.forward() * 0.06));
@@ -124,6 +157,7 @@ public class FlyBrainMod implements ModInitializer {
                     String sid = sessions.computeIfAbsent(mob.getUUID(),
                             u -> bridgeRef.createSession());
                     if (sid == null) return List.<BrainBridge.Action>of();
+                    startStream(mob.getUUID(), sid, bridgeRef);
                     List<BrainBridge.Action> a =
                             bridgeRef.drive(sid, cfg.stimRegion, offset, current, cfg.brainSteps);
                     if (a.isEmpty()) sessions.remove(mob.getUUID());  // stale session

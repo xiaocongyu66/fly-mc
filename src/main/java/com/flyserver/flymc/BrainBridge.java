@@ -10,6 +10,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -30,6 +32,39 @@ public class BrainBridge {
 
     public BrainBridge(BrainConfig config) {
         this.config = config;
+    }
+
+    /** Subscribes to the session's live activity stream (SSE). Each event
+     *  carries the VNC neurons that spiked this brain tick — the caller
+     *  receives them at simulation speed (~130ms per tick), not per batch.
+     *  Blocks until the stream breaks; run on a worker thread. */
+    public void activityStream(String sessionId, java.util.function.Consumer<List<Long>> onTick) {
+        try {
+            ensureToken();
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create(config.baseUrl + "/v1/sessions/" + sessionId + "/activity"))
+                    .timeout(Duration.ofMinutes(30))
+                    .header("Authorization", "Bearer " + token)
+                    .GET().build();
+            HttpResponse<java.io.InputStream> resp = http.send(req,
+                    HttpResponse.BodyHandlers.ofInputStream());
+            try (BufferedReader r = new BufferedReader(
+                    new InputStreamReader(resp.body()))) {
+                String line;
+                while ((line = r.readLine()) != null) {
+                    if (!line.startsWith("data: ")) continue;
+                    JsonObject ev = JsonParser.parseString(line.substring(6))
+                            .getAsJsonObject();
+                    JsonArray sp = ev.getAsJsonArray("spike_sample");
+                    if (sp == null) continue;
+                    List<Long> ids = new ArrayList<>();
+                    for (JsonElement e : sp) ids.add(e.getAsLong());
+                    onTick.accept(ids);
+                }
+            }
+        } catch (Exception e) {
+            // stream ended (session gone / server restart) — caller reconnects
+        }
     }
 
     /** Creates a persistent brain session (membrane state lives across drives). */
