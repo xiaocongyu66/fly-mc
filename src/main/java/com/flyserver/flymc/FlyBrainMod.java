@@ -10,6 +10,10 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Drives configured mobs with the fly brain: game state → stimulus,
@@ -20,6 +24,8 @@ public class FlyBrainMod implements ModInitializer {
     private static volatile BrainConfig config;
     private static volatile BrainBridge bridge;
     private int tickCounter = 0;
+    /** One outstanding drive per entity — results apply when ready. */
+    private final Set<UUID> inFlight = ConcurrentHashMap.newKeySet();
 
     @Override
     public void onInitialize() {
@@ -69,11 +75,30 @@ public class FlyBrainMod implements ModInitializer {
             }
         }
         float current = (float) Math.max(5.0, 100.0 - nearest * 8.0);
+        BrainBridge bridgeRef = bridge;
+        BrainConfig cfg = config;
+        if (!inFlight.add(mob.getUUID())) return;  // previous drive still running
+        CompletableFuture.supplyAsync(
+                () -> bridgeRef.drive(cfg.stimRegion, current, cfg.brainSteps))
+            .thenAccept(actions -> {
+                inFlight.remove(mob.getUUID());
+                if (actions.isEmpty() || !mob.isAlive()) return;
+                var server = mob.level().getServer();
+                if (server != null) {
+                    server.execute(() -> applyActions(mob, actions));
+                } else {
+                    applyActions(mob, actions);
+                }
+            })
+            .exceptionally(ex -> {
+                inFlight.remove(mob.getUUID());
+                return null;
+            });
+    }
 
-        List<BrainBridge.Action> actions = bridge.drive(
-                config.stimRegion, current, config.brainSteps);
-        if (actions.isEmpty()) return;
-
+    /** Runs on the server thread: channel-bucket VNC rates into motion. */
+    private void applyActions(FlyBrainEntity mob, List<BrainBridge.Action> actions) {
+        if (!mob.isAlive()) return;
         double forward = 0, turn = 0;
         boolean jump = false;
         for (BrainBridge.Action a : actions) {

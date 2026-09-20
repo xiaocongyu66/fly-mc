@@ -72,7 +72,7 @@ public class BrainBridge {
     private JsonObject post(String path, String json, boolean auth) throws Exception {
         HttpRequest.Builder rb = HttpRequest.newBuilder()
                 .uri(URI.create(config.baseUrl + path))
-                .timeout(Duration.ofSeconds(5))
+                .timeout(Duration.ofSeconds(20))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(json));
         if (auth && token != null) rb.header("Authorization", "Bearer " + token);
