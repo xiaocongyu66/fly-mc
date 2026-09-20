@@ -168,11 +168,12 @@ public class FlyBrainMod implements ModInitializer {
         float current = (float) Math.max(5.0, 100.0 - nearest * 8.0);
         float offset = (float) (((bearing + 180.0) / 360.0 + 1.0) % 1.0);
         boolean inPain = painUntil.getOrDefault(mob.getUUID(), 0L) > System.currentTimeMillis();
-        if (inPain) {
-            // nociception: strong, non-directional (pain is a body signal)
-            current = 150f;
-            offset = java.util.concurrent.ThreadLocalRandom.current().nextFloat();
-        }
+        final float stimCurrent = inPain
+                ? 150f  // nociception: strong, non-directional
+                : current;
+        final float stimOffset = inPain
+                ? java.util.concurrent.ThreadLocalRandom.current().nextFloat()
+                : offset;
         BrainBridge bridgeRef = bridge;
         BrainConfig cfg = config;
         if (!inFlight.add(mob.getUUID())) return;  // previous drive still running
@@ -188,7 +189,7 @@ public class FlyBrainMod implements ModInitializer {
                         bridgeRef.drive(sid, cfg.stimRegion, sig, 60f, 20);
                     }
                     List<BrainBridge.Action> a =
-                            bridgeRef.drive(sid, cfg.stimRegion, offset, current, cfg.brainSteps);
+                            bridgeRef.drive(sid, cfg.stimRegion, stimOffset, stimCurrent, cfg.brainSteps);
                     if (a.isEmpty()) sessions.remove(mob.getUUID());  // stale session
                     return a;
                 })
