@@ -32,13 +32,15 @@ public class BrainBridge {
         this.config = config;
     }
 
-    /** Runs one brain drive; returns the motor actions (empty on any failure). */
-    public List<Action> drive(String region, float current, int steps) {
+    /** Runs one brain drive; returns the motor actions (empty on any failure).
+     *  offset (0-1) = where in the visual field the stimulus lands (retinotopy). */
+    public List<Action> drive(String region, float offset, float current, int steps) {
         try {
             ensureToken();
             JsonObject body = new JsonObject();
             JsonObject target = new JsonObject();
             target.addProperty("region", region);
+            target.addProperty("offset", offset);
             body.add("target", target);
             body.addProperty("current", current);
             body.addProperty("steps", steps);

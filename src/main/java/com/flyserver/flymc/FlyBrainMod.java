@@ -66,20 +66,30 @@ public class FlyBrainMod implements ModInitializer {
     }
 
     private void driveEntity(FlyBrainEntity mob) {
-        // stimulus strength: closer player → stronger drive (novelty/pressure)
+        // vision: nearest player's bearing maps to a slice of the visual
+        // region (retinotopy); distance sets intensity (novelty/pressure)
         double nearest = 64.0;
+        double bearing = 0.0;
         if (mob.level() != null && !mob.level().players().isEmpty()) {
             for (var p : mob.level().players()) {
                 double d = p.distanceTo(mob);
-                if (d < nearest) nearest = d;
+                if (d < nearest) {
+                    nearest = d;
+                    Vec3 look = mob.getLookAngle();
+                    Vec3 toP = p.position().subtract(mob.position());
+                    double cross = look.x * toP.z - look.z * toP.x;
+                    double dot = look.x * toP.x + look.z * toP.z;
+                    bearing = Math.toDegrees(Math.atan2(cross, dot));
+                }
             }
         }
         float current = (float) Math.max(5.0, 100.0 - nearest * 8.0);
+        float offset = (float) (((bearing + 180.0) / 360.0 + 1.0) % 1.0);
         BrainBridge bridgeRef = bridge;
         BrainConfig cfg = config;
         if (!inFlight.add(mob.getUUID())) return;  // previous drive still running
         CompletableFuture.supplyAsync(
-                () -> bridgeRef.drive(cfg.stimRegion, current, cfg.brainSteps))
+                () -> bridgeRef.drive(cfg.stimRegion, offset, current, cfg.brainSteps))
             .thenAccept(actions -> {
                 inFlight.remove(mob.getUUID());
                 if (actions.isEmpty() || !mob.isAlive()) return;
