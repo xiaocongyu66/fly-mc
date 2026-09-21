@@ -38,6 +38,10 @@ public class FlyBrainMod implements ModInitializer {
     private final Map<UUID, Long> painUntil = new ConcurrentHashMap<>();
     /** Entities whose session already got its individuality signature. */
     private final Set<UUID> seeded = ConcurrentHashMap.newKeySet();
+    /** Last gait epoch that already executed its jump (one hop per decision). */
+    private final Map<UUID, Long> jumpedEpoch = new ConcurrentHashMap<>();
+    private final java.util.concurrent.atomic.AtomicLong gaitEpoch =
+            new java.util.concurrent.atomic.AtomicLong();
 
     /** Called from FlyBrainEntity.hurt on the server thread: reflex + pain. */
     public static void onPain(FlyBrainEntity mob, float amount) {
@@ -47,11 +51,13 @@ public class FlyBrainMod implements ModInitializer {
         self.painUntil.put(mob.getUUID(), now + 1500);
         // immediate reflex: jolt + random turn + hop (spinal, no brain)
         double turn = java.util.concurrent.ThreadLocalRandom.current().nextBoolean() ? 1.0 : -1.0;
-        self.gaits.put(mob.getUUID(), new Gait(0.6, turn, true));
+        self.gaits.put(mob.getUUID(),
+                new Gait(0.6, turn, true, self.gaitEpoch.incrementAndGet()));
     }
 
-    /** Held motor command between brain updates: think slow, act fast. */
-    private record Gait(double forward, double turn, boolean jump) {}
+    /** Held motor command between brain updates: think slow, act fast.
+     *  epoch increments per brain decision — jump fires once per epoch. */
+    private record Gait(double forward, double turn, boolean jump, long epoch) {}
     /** Rolling spike-bucket window per entity, fed by the live SSE stream. */
     private record StreamAcc(double[] buckets, int n) {}
 
@@ -142,7 +148,9 @@ public class FlyBrainMod implements ModInitializer {
         if (Math.abs(g.turn()) > 0.05) {
             mob.setYRot(mob.getYRot() + (float) Math.max(-3.0, Math.min(3.0, g.turn() * 3.0)));
         }
-        if (g.jump() && mob.onGround()) {
+        if (g.jump() && mob.onGround()
+                && jumpedEpoch.get(mob.getUUID()) != Long.valueOf(g.epoch())) {
+            jumpedEpoch.put(mob.getUUID(), g.epoch());
             v = new Vec3(v.x, 0.42, v.z);
         }
         mob.setDeltaMovement(v);
@@ -220,7 +228,7 @@ public class FlyBrainMod implements ModInitializer {
     private void applyActions(FlyBrainEntity mob, List<BrainBridge.Action> actions) {
         if (!mob.isAlive()) return;
         double forward = 0, turn = 0;
-        boolean jump = false;
+        int jumpVotes = 0;
         for (BrainBridge.Action a : actions) {
             long q = a.neuronId() % 3;
             if (q == 0) {
@@ -229,9 +237,13 @@ public class FlyBrainMod implements ModInitializer {
                 if ((a.neuronId() / 3) % 2 == 0) turn += a.rate();
                 else turn -= a.rate();
             } else if (a.rate() > config.attackRateThreshold) {
-                jump = true;
+                jumpVotes++;
             }
         }
-        gaits.put(mob.getUUID(), new Gait(forward, turn, jump));
+        // a hop needs agreement from several high-rate motor neurons, and
+        // executes once per decision (no machine-gun hopping)
+        boolean jump = jumpVotes >= 2;
+        gaits.put(mob.getUUID(),
+                new Gait(forward, turn, jump, gaitEpoch.incrementAndGet()));
     }
 }
