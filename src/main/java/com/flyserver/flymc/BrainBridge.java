@@ -181,20 +181,28 @@ public class BrainBridge {
     }
 
     /** Runs one drive on a persistent session: stimulate, think, read motors.
-     *  offset (0-1) = where in the visual field the stimulus lands (retinotopy). */
-    public List<Action> drive(String sessionId, String region, float offset, float current, int steps) {
+     *  frame = visual field (az,current pairs) injected as optic-lobe columns,
+     *  llama.cpp mtmd-style (frame → patches → per-patch injection). */
+    public List<Action> drive(String sessionId, String region, List<float[]> frame, float current, int steps) {
         try {
             ensureToken();
             JsonObject target = new JsonObject();
             target.addProperty("region", region);
-            target.addProperty("offset", offset);
-            // true retinotopy: server picks neurons by soma position (v3)
-            target.addProperty("retina", offset);
             JsonObject ob = new JsonObject();
             ob.addProperty("modality", "current");
             ob.add("target", target);
             ob.addProperty("current", current);
             ob.addProperty("duration_ticks", 1);
+            if (frame != null && !frame.isEmpty()) {
+                com.google.gson.JsonArray fr = new com.google.gson.JsonArray();
+                for (float[] c : frame) {
+                    JsonObject col = new JsonObject();
+                    col.addProperty("az", c[0]);
+                    col.addProperty("current", c[1]);
+                    fr.add(col);
+                }
+                ob.add("frame", fr);
+            }
             post("/v1/sessions/" + sessionId + "/observe", ob.toString(), true);
 
             JsonObject sb = new JsonObject();

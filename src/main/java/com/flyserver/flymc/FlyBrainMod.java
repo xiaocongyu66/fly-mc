@@ -148,32 +148,34 @@ public class FlyBrainMod implements ModInitializer {
     }
 
     private void driveEntity(FlyBrainEntity mob) {
-        // vision: nearest player's bearing maps to a slice of the visual
-        // region (retinotopy); distance sets intensity (novelty/pressure)
+        // vision: an 8-column azimuth frame of the whole visual field
+        // (llama.cpp mtmd analog: frame → columns → per-column injection);
+        // each column's current = the strongest stimulus seen in that sector
+        double[] sector = new double[8];
+        java.util.Arrays.fill(sector, -1.0);
         double nearest = 64.0;
-        double bearing = 0.0;
-        if (mob.level() != null && !mob.level().players().isEmpty()) {
+        if (mob.level() != null) {
+            Vec3 look = mob.getLookAngle();
+            double base = Math.toDegrees(Math.atan2(look.z, look.x));
             for (var p : mob.level().players()) {
                 double d = p.distanceTo(mob);
-                if (d < nearest) {
-                    nearest = d;
-                    Vec3 look = mob.getLookAngle();
-                    Vec3 toP = p.position().subtract(mob.position());
-                    double cross = look.x * toP.z - look.z * toP.x;
-                    double dot = look.x * toP.x + look.z * toP.z;
-                    bearing = Math.toDegrees(Math.atan2(cross, dot));
-                }
+                nearest = Math.min(nearest, d);
+                Vec3 toP = p.position().subtract(mob.position());
+                double ang = Math.toDegrees(
+                        Math.atan2(toP.z, toP.x) - Math.toRadians(base));
+                float az = (float) (((ang / 360.0) + 1.0) % 1.0);
+                int bin = (int) (az * 8.0) % 8;
+                sector[bin] = Math.max(sector[bin], Math.max(5.0, 100.0 - d * 8.0));
             }
         }
-        float current = (float) Math.max(5.0, 100.0 - nearest * 8.0);
-        float offset = (float) (((bearing + 180.0) / 360.0 + 1.0) % 1.0);
+        java.util.List<float[]> frame = new java.util.ArrayList<>();
+        for (int k = 0; k < 8; k++) {
+            float cur = sector[k] < 0 ? 5.0f : (float) sector[k];
+            frame.add(new float[]{(k + 0.5f) / 8.0f, cur});
+        }
         boolean inPain = painUntil.getOrDefault(mob.getUUID(), 0L) > System.currentTimeMillis();
-        final float stimCurrent = inPain
-                ? 150f  // nociception: strong, non-directional
-                : current;
-        final float stimOffset = inPain
-                ? java.util.concurrent.ThreadLocalRandom.current().nextFloat()
-                : offset;
+        final float stimCurrent = inPain ? 150f : (float) Math.max(5.0, 100.0 - nearest * 8.0);
+        final java.util.List<float[]> stimFrame = inPain ? java.util.List.of() : frame;
         BrainBridge bridgeRef = bridge;
         BrainConfig cfg = config;
         if (!inFlight.add(mob.getUUID())) return;  // previous drive still running
@@ -186,10 +188,11 @@ public class FlyBrainMod implements ModInitializer {
                         // individuality: a one-time random signature stimulus
                         // decorrelates otherwise-identical trajectories
                         float sig = java.util.concurrent.ThreadLocalRandom.current().nextFloat();
-                        bridgeRef.drive(sid, cfg.stimRegion, sig, 60f, 20);
+                        bridgeRef.drive(sid, cfg.stimRegion,
+                                java.util.List.of(new float[]{sig, 60f}), 60f, 20);
                     }
                     List<BrainBridge.Action> a =
-                            bridgeRef.drive(sid, cfg.stimRegion, stimOffset, stimCurrent, cfg.brainSteps);
+                            bridgeRef.drive(sid, cfg.stimRegion, stimFrame, stimCurrent, cfg.brainSteps);
                     if (a.isEmpty()) sessions.remove(mob.getUUID());  // stale session
                     return a;
                 })
