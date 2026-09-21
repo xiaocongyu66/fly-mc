@@ -183,7 +183,7 @@ public class FlyBrainMod implements ModInitializer {
             float cur = sector[k] < 0 ? 5.0f : (float) sector[k];
             frame.add(new float[]{(k + 0.5f) / 8.0f, cur});
         }
-        boolean inPain = painUntil.getOrDefault(mob.getUUID(), 0L) > System.currentTimeMillis();
+        final boolean inPain = painUntil.getOrDefault(mob.getUUID(), 0L) > System.currentTimeMillis();
         final float stimCurrent = inPain ? 150f : (float) Math.max(5.0, 100.0 - nearest * 8.0);
         final java.util.List<float[]> stimFrame = inPain ? java.util.List.of() : frame;
         BrainBridge bridgeRef = bridge;
