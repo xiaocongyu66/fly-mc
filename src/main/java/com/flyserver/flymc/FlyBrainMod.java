@@ -127,8 +127,7 @@ public class FlyBrainMod implements ModInitializer {
                 if (cnt[0] >= 8) {  // ~1s of brain time: refresh the gait
                     double f = acc[0][0] / cnt[0], tn = acc[0][1] / cnt[0];
                     boolean j = acc[0][2] / cnt[0] > config.attackRateThreshold;
-                    Gait g = new Gait(f, tn, j);
-                    var server = java.util.concurrent.CompletableFuture.completedFuture(g);
+                    Gait g = new Gait(f, tn, j, gaitEpoch.incrementAndGet());
                     gaits.put(id, g);
                     acc[0] = new double[3];
                     cnt[0] = 0;
