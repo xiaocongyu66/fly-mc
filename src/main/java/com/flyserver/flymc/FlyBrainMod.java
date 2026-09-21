@@ -42,6 +42,8 @@ public class FlyBrainMod implements ModInitializer {
     private final Map<UUID, Long> jumpedEpoch = new ConcurrentHashMap<>();
     private final java.util.concurrent.atomic.AtomicLong gaitEpoch =
             new java.util.concurrent.atomic.AtomicLong();
+    /** Previous distance to nearest player, per entity (for reward shaping). */
+    private final Map<UUID, Double> lastDist = new ConcurrentHashMap<>();
 
     /** Called from FlyBrainEntity.hurt on the server thread: reflex + pain. */
     public static void onPain(FlyBrainEntity mob, float amount) {
@@ -201,7 +203,24 @@ public class FlyBrainMod implements ModInitializer {
                     }
                     List<BrainBridge.Action> a =
                             bridgeRef.drive(sid, cfg.stimRegion, stimFrame, stimCurrent, cfg.brainSteps);
-                    if (a.isEmpty()) sessions.remove(mob.getUUID());  // stale session
+                    if (a.isEmpty()) {
+                        sessions.remove(mob.getUUID());  // stale session
+                        return a;
+                    }
+                    // reward shaping: approaching the player is good,
+                    // receding is bad, damage was already signaled by pain
+                    if (!inPain) {
+                        double now = nearest;
+                        Double prev = lastDist.put(mob.getUUID(), now);
+                        if (prev != null) {
+                            float improvement = (float) (prev - now);
+                            if (Math.abs(improvement) > 0.5) {
+                                bridgeRef.reward(sid,
+                                        Math.max(-2.0f, Math.min(2.0f, improvement * 0.4f)),
+                                        improvement > 0 ? "approach" : "retreat");
+                            }
+                        }
+                    }
                     return a;
                 })
             .thenAccept(actions -> {

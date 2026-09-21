@@ -133,6 +133,19 @@ public class BrainBridge {
         }
     }
 
+    /** Game feedback: feed reward into the session's R-STDP (fire-and-forget). */
+    public void reward(String sessionId, float reward, String tag) {
+        try {
+            ensureToken();
+            JsonObject ob = new JsonObject();
+            ob.addProperty("reward", reward);
+            ob.addProperty("tag", tag);
+            post("/v1/sessions/" + sessionId + "/reward", ob.toString(), true);
+        } catch (Exception ignored) {
+            // reward is advisory — never let it break the drive loop
+        }
+    }
+
     /** Subscribes to the session's live activity stream (SSE). Each event
      *  carries the VNC neurons that spiked this brain tick — the caller
      *  receives them at simulation speed (~130ms per tick), not per batch.
