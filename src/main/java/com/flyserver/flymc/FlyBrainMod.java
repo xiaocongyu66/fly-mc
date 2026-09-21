@@ -184,6 +184,7 @@ public class FlyBrainMod implements ModInitializer {
             frame.add(new float[]{(k + 0.5f) / 8.0f, cur});
         }
         final boolean inPain = painUntil.getOrDefault(mob.getUUID(), 0L) > System.currentTimeMillis();
+        final double nearestDist = nearest;
         final float stimCurrent = inPain ? 150f : (float) Math.max(5.0, 100.0 - nearest * 8.0);
         final java.util.List<float[]> stimFrame = inPain ? java.util.List.of() : frame;
         BrainBridge bridgeRef = bridge;
@@ -210,7 +211,7 @@ public class FlyBrainMod implements ModInitializer {
                     // reward shaping: approaching the player is good,
                     // receding is bad, damage was already signaled by pain
                     if (!inPain) {
-                        double now = nearest;
+                        double now = nearestDist;
                         Double prev = lastDist.put(mob.getUUID(), now);
                         if (prev != null) {
                             float improvement = (float) (prev - now);
