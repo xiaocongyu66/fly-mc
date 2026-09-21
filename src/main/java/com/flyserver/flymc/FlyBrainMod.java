@@ -138,8 +138,9 @@ public class FlyBrainMod implements ModInitializer {
         Vec3 look = mob.getLookAngle();
         double speed = Math.max(0.0, Math.min(0.25, g.forward() * 0.06));
         Vec3 v = new Vec3(look.x * speed, mob.getDeltaMovement().y, look.z * speed);
-        if (g.turn() > 0.15) {
-            mob.setYRot(mob.getYRot() + (float) Math.min(3.0, g.turn() * 3.0));
+        // signed turn: left/right VNC pool asymmetry (brain-measured)
+        if (Math.abs(g.turn()) > 0.05) {
+            mob.setYRot(mob.getYRot() + (float) Math.max(-3.0, Math.min(3.0, g.turn() * 3.0)));
         }
         if (g.jump() && mob.onGround()) {
             v = new Vec3(v.x, 0.42, v.z);
@@ -213,17 +214,22 @@ public class FlyBrainMod implements ModInitializer {
     }
 
     /** Runs on the server thread: channel-bucket VNC rates into a gait
-     *  command that persists (applied every tick) until the next decision. */
+     *  command that persists (applied every tick) until the next decision.
+     *  Turn is SIGNED: within the turn bucket, odd/even id groups are the
+     *  left/right motor pools — their asymmetry is the steering signal. */
     private void applyActions(FlyBrainEntity mob, List<BrainBridge.Action> actions) {
         if (!mob.isAlive()) return;
         double forward = 0, turn = 0;
         boolean jump = false;
         for (BrainBridge.Action a : actions) {
-            int channel = (int) (a.neuronId() % 3);
-            switch (channel) {
-                case 0 -> forward += a.rate();
-                case 1 -> turn += a.rate();
-                case 2 -> { if (a.rate() > config.attackRateThreshold) jump = true; }
+            long q = a.neuronId() % 3;
+            if (q == 0) {
+                forward += a.rate();
+            } else if (q == 1) {
+                if ((a.neuronId() / 3) % 2 == 0) turn += a.rate();
+                else turn -= a.rate();
+            } else if (a.rate() > config.attackRateThreshold) {
+                jump = true;
             }
         }
         gaits.put(mob.getUUID(), new Gait(forward, turn, jump));
